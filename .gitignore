@@ -1,0 +1,8 @@
+*.txt
+*.um
+*.umz
+*.pdf
+*.zip
+.DS_Store
+um
+dumper
