@@ -70,6 +70,8 @@ class Platters
 end
 
 class UniversalMachine
+  property input_str
+
   def initialize(program_file : String)
     file = File.new(program_file)
     bytes = Bytes.new(file.size)
@@ -87,7 +89,7 @@ class UniversalMachine
     @rng = Random.new(42)
     # @dump = false
     # @dump_file = File.new("dump.um", "w")
-    @input_str = "guest\n" # "(\\b.bb)(\\v.vv)06FHPVboundvarHRAk"
+    @input_str = "" # "(\\b.bb)(\\v.vv)06FHPVboundvarHRAk"
     @input_pos = 0
     @logger = Logger.new(STDERR)
     @logger.level = DEBUG ? Logger::INFO : Logger::WARN
@@ -190,6 +192,3 @@ class UniversalMachine
     @finger < @program.size
   end
 end
-
-um = UniversalMachine.new(ARGV[0])
-um.start
