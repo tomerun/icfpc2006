@@ -27,7 +27,7 @@ class Platters
     i1 = idx >> SEGMENT_BITS
     i2 = idx & ((1_u32 << SEGMENT_BITS) - 1)
     if !m
-      m = Array(Array(UInt32) | Nil).new((@size >> SEGMENT_BITS) + 1_u32, nil)
+      m = Array(Array(UInt32) | Nil).new(((@size + ((1 << SEGMENT_BITS) - 1)) >> SEGMENT_BITS) + 1_u32, nil)
       a = Array.new(1 << SEGMENT_BITS, 0_u32)
       a[i2] = value
       m[i1] = a
@@ -141,14 +141,15 @@ class UniversalMachine
     when 7 # Halt
       return false
     when 8 # Allocation
+      size = @register[reg_c]
       while true
-        @register[reg_b] = (@rng.next_u >> 10) + 255
+        @register[reg_b] = (@rng.next_u & 0xFFFFFFF) + 1
         if !@arrays.has_key?(@register[reg_b])
           break
         end
       end
-      @logger.info("alloc:arr[#{@register[reg_b]}] = new array[#{@register[reg_c]}]")
-      @arrays[@register[reg_b]] = Platters.new(@register[reg_c])
+      @logger.info("alloc:arr[#{@register[reg_b]}] = new array[#{size}]")
+      @arrays[@register[reg_b]] = Platters.new(size)
     when 9 # Abandonment
       @logger.info("abandon:#{@register[reg_c]}")
       raise @register[reg_c].to_s if !@arrays.has_key?(@register[reg_c])
