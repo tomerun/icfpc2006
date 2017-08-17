@@ -100,7 +100,7 @@ class UniversalMachine
   def start
     while step()
     end
-    @dump_file.close
+    # @dump_file.close
   end
 
   def step
