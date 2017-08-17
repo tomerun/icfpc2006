@@ -1,5 +1,73 @@
 require "logger"
 
+SEGMENT_BITS = 10
+
+class Platters
+  @mapping : (Array(Array(UInt32) | Nil) | Nil)
+
+  def initialize(@size : UInt32)
+  end
+
+  def [](idx : UInt32)
+    m = @mapping
+    if !m
+      0_u32
+    else
+      a = m[idx >> SEGMENT_BITS]?
+      if !a
+        0_u32
+      else
+        a[idx & ((1_u32 << SEGMENT_BITS) - 1)]
+      end
+    end
+  end
+
+  def []=(idx : UInt32, value : UInt32)
+    m = @mapping
+    i1 = idx >> SEGMENT_BITS
+    i2 = idx & ((1_u32 << SEGMENT_BITS) - 1)
+    if !m
+      m = Array(Array(UInt32) | Nil).new((@size >> SEGMENT_BITS) + 1_u32, nil)
+      a = Array.new(1 << SEGMENT_BITS, 0_u32)
+      a[i2] = value
+      m[i1] = a
+      @mapping = m
+    else
+      a = m[i1]?
+      if !a
+        a = Array.new(1 << SEGMENT_BITS, 0_u32)
+        a[i2] = value
+        m[i1] = a
+      else
+        a[i2] = value
+      end
+    end
+  end
+
+  def size
+    @size
+  end
+
+  def to_a
+    m = @mapping
+    ret = Array.new(@size, 0_u32)
+    if !m
+      ret
+    else
+      m.size.times do |i|
+        a = m[i]
+        if a
+          a.size.times do |j|
+            break if (i << SEGMENT_BITS) + j >= @size
+            ret[(i << SEGMENT_BITS) + j] = a[j]
+          end
+        end
+      end
+      ret
+    end
+  end
+end
+
 class UniversalMachine
   def initialize(program_file : String)
     file = File.new(program_file)
@@ -12,7 +80,7 @@ class UniversalMachine
         (bytes[i * 4 + 3].to_u32 << 0)
     end
     @register = Array(UInt32).new(8, 0_u32)
-    @arrays = Hash(UInt32, Array(UInt32)).new
+    @arrays = Hash(UInt32, (Array(UInt32) | Platters)).new
     @arrays[0_u32] = @program
     @finger = 0_u32
     @rng = Random.new(42)
@@ -47,14 +115,14 @@ class UniversalMachine
     when 1 # Array Index
       ar = @arrays[@register[reg_b]]
       if ar.size <= @register[reg_c]
-        @logger.error("#{ar.size}  #{@register[reg_c]}")
+        @logger.error("1: #{ar.size}  #{@register[reg_c]} at finger #{@finger}")
       end
       @logger.info("r[#{reg_a}] = arr[#{@register[reg_b]}][#{@register[reg_c]}] #{@register}")
       @register[reg_a] = ar[@register[reg_c]]
     when 2 # Array Amendment
       ar = @arrays[@register[reg_a]]
       if ar.size <= @register[reg_b]
-        @logger.error("#{ar.size}  #{@register[reg_b]}")
+        @logger.error("2: #{ar.size}  #{@register[reg_b]} at finger #{@finger}")
       end
       @logger.info("arr[#{@register[reg_a]}][#{@register[reg_b]}] = r[#{reg_c}] #{@register}")
       ar[@register[reg_b]] = @register[reg_c]
@@ -73,11 +141,14 @@ class UniversalMachine
     when 7 # Halt
       return false
     when 8 # Allocation
-      while @arrays.has_key?(@register[reg_b])
-        @register[reg_b] = (@rng.next_u >> 16) + 255
+      while true
+        @register[reg_b] = (@rng.next_u >> 10) + 255
+        if !@arrays.has_key?(@register[reg_b])
+          break
+        end
       end
       @logger.info("alloc:arr[#{@register[reg_b]}] = new array[#{@register[reg_c]}]")
-      @arrays[@register[reg_b]] = Array(UInt32).new(@register[reg_c], 0_u32)
+      @arrays[@register[reg_b]] = Platters.new(@register[reg_c])
     when 9 # Abandonment
       @logger.info("abandon:#{@register[reg_c]}")
       raise @register[reg_c].to_s if !@arrays.has_key?(@register[reg_c])
@@ -101,7 +172,7 @@ class UniversalMachine
     when 12 # Load Program
       if @register[reg_b] != 0
         @logger.info("load array:#{@register[reg_b]} finger:#{@register[reg_c]}")
-        @program = @arrays[@register[reg_b]].clone
+        @program = @arrays[@register[reg_b]].to_a
         @arrays[0_u32] = @program
       else
         @logger.info("jump finger:#{@finger}(#{@finger.to_s(16)})->#{@register[reg_c]}(#{@register[reg_c].to_s(16)})")
