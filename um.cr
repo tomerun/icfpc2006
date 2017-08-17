@@ -12,9 +12,10 @@ class UniversalMachine
         (bytes[i * 4 + 3].to_u32 << 0)
     end
     @register = Array(UInt32).new(8, 0_u32)
-    @arrays = Hash(UInt32, Array(Array(UInt32))).new
-    @arrays[0_u32] = [@program]
+    @arrays = Hash(UInt32, Array(UInt32)).new
+    @arrays[0_u32] = @program
     @finger = 0_u32
+    @rng = Random.new(42)
     @dump = false
     @dump_file = File.new("decompressed.um", "w")
     @input_str = "(\\b.bb)(\\v.vv)06FHPVboundvarHRAk"
@@ -44,15 +45,19 @@ class UniversalMachine
       @logger.info("r[#{reg_a}] <- r[#{reg_b}] if r[#{reg_c}] #{@register}")
       @register[reg_a] = @register[reg_b] if @register[reg_c] != 0
     when 1 # Array Index
-      ar = @arrays[@register[reg_b]][0]
+      ar = @arrays[@register[reg_b]]
       if ar.size <= @register[reg_c]
         @logger.error("#{ar.size}  #{@register[reg_c]}")
       end
       @logger.info("r[#{reg_a}] = arr[#{@register[reg_b]}][#{@register[reg_c]}] #{@register}")
       @register[reg_a] = ar[@register[reg_c]]
     when 2 # Array Amendment
+      ar = @arrays[@register[reg_a]]
+      if ar.size <= @register[reg_b]
+        @logger.error("#{ar.size}  #{@register[reg_b]}")
+      end
       @logger.info("arr[#{@register[reg_a]}][#{@register[reg_b]}] = r[#{reg_c}] #{@register}")
-      @arrays[@register[reg_a]][0][@register[reg_b]] = @register[reg_c]
+      ar[@register[reg_b]] = @register[reg_c]
     when 3 # Addition
       @logger.info("r[#{reg_a}] <- r[#{reg_b}] + r[#{reg_c}] #{@register}")
       @register[reg_a] = @register[reg_b] + @register[reg_c]
@@ -68,16 +73,15 @@ class UniversalMachine
     when 7 # Halt
       return false
     when 8 # Allocation
-      # raise @register[reg_b].to_s if @arrays.has_key?(@register[reg_b])
-      if !@arrays.has_key?(@register[reg_b])
-        @arrays[@register[reg_b]] = [] of Array(UInt32)
+      while @arrays.has_key?(@register[reg_b])
+        @register[reg_b] = (@rng.next_u >> 16) + 255
       end
-      @logger.info("alloc:#{@register[reg_b]} #{@register[reg_c]}")
-      @arrays[@register[reg_b]] << Array(UInt32).new(@register[reg_c], 0_u32)
+      @logger.info("alloc:arr[#{@register[reg_b]}] = new array[#{@register[reg_c]}]")
+      @arrays[@register[reg_b]] = Array(UInt32).new(@register[reg_c], 0_u32)
     when 9 # Abandonment
       @logger.info("abandon:#{@register[reg_c]}")
       raise @register[reg_c].to_s if !@arrays.has_key?(@register[reg_c])
-      @arrays[@register[reg_c]].shift
+      @arrays.delete(@register[reg_c])
     when 10 # Output
       if @dump
         @dump_file.write_byte(@register[reg_c].to_u8)
@@ -97,10 +101,11 @@ class UniversalMachine
     when 12 # Load Program
       if @register[reg_b] != 0
         @logger.info("load array:#{@register[reg_b]} finger:#{@register[reg_c]}")
-        @program = @arrays[@register[reg_b]][0].clone
-        @arrays[0_u32] = [@program]
+        @program = @arrays[@register[reg_b]].clone
+        @arrays[0_u32] = @program
+      else
+        @logger.info("jump finger:#{@finger}(#{@finger.to_s(16)})->#{@register[reg_c]}(#{@register[reg_c].to_s(16)})")
       end
-      @logger.info("load program: size:#{@program.size} finger:#{@finger}(#{@finger.to_s(16)})->#{@register[reg_c]}(#{@register[reg_c].to_s(16)})")
       @finger = @register[reg_c]
     when 13 # Orthography
       reg_a = (platter >> 25) & 7
